@@ -8,7 +8,7 @@ const trainingData = JSON.parse(fs.readFileSync("training-data.json", "utf-8"));
 const inputTexts = trainingData.map(d => tokenizer.tokenize(d.input.toLowerCase()).join(" "));
 const outputTexts = trainingData.map(d => d.output);
 
-const maxWords = 20; // Maksimal kata per input
+const maxWords = 20;
 const wordSet = new Set(inputTexts.join(" ").split(" "));
 const wordIndex = Array.from(wordSet).reduce((acc, word, i) => {
     acc[word] = i + 1;
@@ -29,10 +29,10 @@ model.add(tf.layers.dense({ units: trainingData.length, activation: "softmax" })
 model.compile({ optimizer: "adam", loss: "sparseCategoricalCrossentropy", metrics: ["accuracy"] });
 
 async function trainModel() {
-    console.log("Melatih model AI...");
+    console.log("🧠 Melatih model AI...");
     await model.fit(xTrain, yTrain, { epochs: 100 });
     await model.save(`file://./model`);
-    console.log("Model berhasil disimpan!");
+    console.log("✅ Model berhasil disimpan!");
 }
 
-trainModel();
+module.exports = { trainModel };
