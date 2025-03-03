@@ -16,7 +16,8 @@
     "express": "^4.21.0",
     "natural": "^0.6.3",
     "cors": "^2.8.5",
-    "fs": "^0.0.2"
+    "fs": "^0.0.2",
+    "axios": "^1.8.1"
   },
   "scripts": {
     "start": "node index.js", 
