@@ -1,0 +1,23 @@
+{
+  "name": "AI",
+  "author": "MaskStarmoon",
+  "description": "Artificial Intelligence (AI)",
+  "version": "1.2.0",
+  "main": "Index.js",
+  "lockfileVersion": 3,
+  "requires": true,
+  "packages": {},
+  "license": "MIT",
+  "engines": {
+  "node": "16.x"
+},
+  "dependencies": {
+    "express": "^4.21.0",
+    "natural": "^0.6.3",
+    "cors": "^2.8.5"
+  },
+  "scripts": {
+    "start": "node index.js", 
+    "dev": "node index.js"
+  }
+}
