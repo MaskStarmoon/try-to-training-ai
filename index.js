@@ -4,6 +4,7 @@ const tf = require("@tensorflow/tfjs-node");
 const fs = require("fs");
 const natural = require("natural");
 const { trainModel } = require("./train");
+const axios = require('axios');
 
 const app = express();
 app.use(express.json());
@@ -14,7 +15,10 @@ const trainingData = JSON.parse(fs.readFileSync("training-data.json", "utf-8"));
 const modelPath = "file://./model/model.json";
 let model;
 
-const wordSet = new Set(trainingData.map(d => tokenizer.tokenize(d.input.toLowerCase())).flat());
+const wordSet = new Set(trainingData
+    .map(d => tokenizer.tokenize(d.input.toLowerCase()))
+    .reduce((acc, val) => acc.concat(val), [])
+);
 const wordIndex = Array.from(wordSet).reduce((acc, word, i) => {
     acc[word] = i + 1;
     return acc;
