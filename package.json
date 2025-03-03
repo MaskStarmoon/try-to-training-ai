@@ -9,7 +9,7 @@
   "packages": {},
   "license": "MIT",
   "engines": {
-  "node": "18.x"
+  "node": "16.x"
 },
   "dependencies": {
     "@tensorflow/tfjs-node": "^4.10.0",
