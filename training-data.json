@@ -1,0 +1,5 @@
+[
+    { "input": "Halo", "output": "Hai! Apa kabar?" },
+    { "input": "Siapa namamu?", "output": "Aku adalah chatbot AI-mu!" },
+    { "input": "Apa yang bisa kamu lakukan?", "output": "Aku bisa ngobrol denganmu!" }
+]
