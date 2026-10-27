@@ -1,71 +1,185 @@
+
 const express = require("express");
 const cors = require("cors");
 const tf = require("@tensorflow/tfjs-node");
 const fs = require("fs");
+const path = require("path");
+const { pathToFileURL } = require("url");
 const natural = require("natural");
 const { trainModel } = require("./train");
-const axios = require('axios');
 
 const app = express();
-app.use(express.json());
-app.use(cors());
-
 const tokenizer = new natural.WordTokenizer();
-const trainingData = JSON.parse(fs.readFileSync("training-data.json", "utf-8"));
-const modelPath = "file://./model/model.json";
-let model;
 
-const wordSet = new Set(trainingData
-    .map(d => tokenizer.tokenize(d.input.toLowerCase()))
-    .reduce((acc, val) => acc.concat(val), [])
-);
-const wordIndex = Array.from(wordSet).reduce((acc, word, i) => {
-    acc[word] = i + 1;
-    return acc;
-}, {});
+const PORT = process.env.PORT || 3000;
+const DATA_PATH = path.join(__dirname, "training-data.json");
+const MODEL_DIR = path.join(__dirname, "model");
+const MODEL_PATH = path.join(MODEL_DIR, "model.json");
+const METADATA_PATH = path.join(MODEL_DIR, "metadata.json");
 
-const encodeText = text => {
-    const tokens = tokenizer.tokenize(text.toLowerCase());
-    return Array.from({ length: 20 }, (_, i) => wordIndex[tokens[i]] || 0);
-};
+const MAX_MESSAGE_LENGTH = 1000;
+const MIN_CONFIDENCE = 0.25;
 
-async function loadModel() {
-    if (!fs.existsSync("./model/model.json")) {
-        console.log("⚠️ Model tidak ditemukan! Melatih model...");
-        await trainModel();
-    }
-    model = await tf.loadLayersModel(modelPath);
-    console.log("✅ Model AI berhasil dimuat!");
+app.use(cors());
+app.use(express.json({ limit: "16kb" }));
+
+let model = null;
+let vocabulary = [];
+let labels = [];
+let trainingData = [];
+let ready = false;
+
+function tokenize(text) {
+    return tokenizer.tokenize(text.toLowerCase());
 }
 
-app.post("/chat", async (req, res) => {
-    const { message } = req.body;
-    if (!model) return res.status(500).json({ reply: "Model AI belum siap!" });
+function encodeText(text) {
+    const words = new Set(tokenize(text));
 
-    const inputTensor = tf.tensor2d([encodeText(message)]);
-    const predictions = model.predict(inputTensor);
-    const predictedIndex = predictions.argMax(1).dataSync()[0];
+    return vocabulary.map(word =>
+        words.has(word) ? 1 : 0
+    );
+}
 
-    res.json({ reply: trainingData[predictedIndex].output });
-});
+async function loadModel() {
+    trainingData = JSON.parse(
+        fs.readFileSync(DATA_PATH, "utf8")
+    );
 
-app.get("/api/training-ai", async (req, res) => {
-    try {
-        const userMessage = req.query.text;
+    const modelExists = fs.existsSync(MODEL_PATH);
+    const metadataExists = fs.existsSync(METADATA_PATH);
 
-        if (!userMessage) {
-            return res.status(400).json({ error: "Parameter 'text' diperlukan." });
-        }
-      
-        const response = await axios.post("http://localhost:3000/chat", { message: userMessage });
-
-        res.json({ reply: response.data.reply });
-    } catch (error) {
-        res.status(500).json({ error: "Terjadi kesalahan saat memproses permintaan." });
+    if (!modelExists || !metadataExists) {
+        console.log("⚠️ Model belum tersedia. Melatih AI...");
+        await trainModel();
     }
+
+    const metadata = JSON.parse(
+        fs.readFileSync(METADATA_PATH, "utf8")
+    );
+
+    vocabulary = metadata.vocabulary;
+    labels = metadata.labels;
+
+    model = await tf.loadLayersModel(
+        pathToFileURL(MODEL_PATH).href
+    );
+
+    ready = true;
+    console.log("✅ AI siap digunakan.");
+}
+
+function generateReply(message) {
+    const input = tf.tensor2d(
+        [encodeText(message)],
+        [1, vocabulary.length]
+    );
+
+    let output;
+
+    try {
+        output = model.predict(input);
+
+        const probabilities = output.dataSync();
+        let bestIndex = 0;
+
+        for (let i = 1; i < probabilities.length; i++) {
+            if (probabilities[i] > probabilities[bestIndex]) {
+                bestIndex = i;
+            }
+        }
+
+        const confidence = probabilities[bestIndex];
+
+        if (confidence < MIN_CONFIDENCE) {
+            return {
+                reply: "Maaf, aku belum memahami pertanyaan itu. Bisa jelaskan dengan cara lain?",
+                confidence: Number(confidence.toFixed(4))
+            };
+        }
+
+        return {
+            reply: labels[bestIndex],
+            confidence: Number(confidence.toFixed(4))
+        };
+    } finally {
+        input.dispose();
+
+        if (output) {
+            output.dispose();
+        }
+    }
+}
+
+function handleChat(req, res) {
+    if (!ready || !model) {
+        return res.status(503).json({
+            error: "AI sedang disiapkan. Coba lagi sebentar."
+        });
+    }
+
+    const message = req.body?.message;
+
+    if (typeof message !== "string" || !message.trim()) {
+        return res.status(400).json({
+            error: "Pesan harus berupa teks dan tidak boleh kosong."
+        });
+    }
+
+    if (message.length > MAX_MESSAGE_LENGTH) {
+        return res.status(413).json({
+            error: `Pesan maksimal ${MAX_MESSAGE_LENGTH} karakter.`
+        });
+    }
+
+    try {
+        const result = generateReply(message.trim());
+
+        return res.json(result);
+    } catch (error) {
+        console.error("Kesalahan prediksi:", error.message);
+
+        return res.status(500).json({
+            error: "Gagal memproses pesan."
+        });
+    }
+}
+
+app.get("/", (req, res) => {
+    res.json({
+        name: "Lightweight ML Chatbot",
+        status: ready ? "online" : "starting",
+        endpoints: ["/chat", "/api/training-ai"]
+    });
 });
 
-app.listen(3000, async () => {
-    await loadModel();
-    console.log("🤖 Chatbot ML berjalan di http://localhost:3000");
+app.get("/api/status", (req, res) => {
+    res.json({
+        success: true,
+        status: ready ? "online" : "starting",
+        modelLoaded: Boolean(model),
+        vocabularySize: vocabulary.length,
+        answerClasses: labels.length
+    });
 });
+
+app.post("/chat", handleChat);
+
+app.get("/api/training-ai", (req, res) => {
+    req.body = { message: req.query.text };
+    handleChat(req, res);
+});
+
+async function startServer() {
+    try {
+        await loadModel();
+
+        app.listen(PORT, "0.0.0.0", () => {
+            console.log(`🤖 AI berjalan pada port ${PORT}`);
+        });
+    } catch (error) {
+        console.error("❌ Gagal menyiapkan AI:", error);
+        process.exit(1);
+    }
+}
+startServer();
